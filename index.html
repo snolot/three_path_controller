@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>three stork path</title>
+	<style type="text/css">
+		body, html{
+			margin:0px;
+			width:100%;
+			height:100%;
+		}
+
+		.hud{
+			position:absolute;
+			left: 0px;
+			top:0px;
+			display: inline-flex;
+			margin: 10px;
+			width:200px;
+		}
+
+		.hud .btn{
+
+		}
+
+
+
+	</style>
+	<script type="x-shader/x-vertex" id="vertexShader">
+		varying vec3 vWorldPosition;
+
+		void main() {
+
+			vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
+			vWorldPosition = worldPosition.xyz;
+
+			gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+		}
+	</script>
+	<script type="x-shader/x-fragment" id="fragmentShader">
+
+			uniform vec3 topColor;
+			uniform vec3 bottomColor;
+			uniform float offset;
+			uniform float exponent;
+
+			varying vec3 vWorldPosition;
+
+			void main() {
+
+				float h = normalize( vWorldPosition + offset ).y;
+				gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( max( h , 0.0), exponent ), 0.0 ) ), 1.0 );
+
+			}
+
+	</script>
+</head>
+<body>
+	<div class="hud">
+		<button class="btn start">stop</button>
+	</div>
+	<script type="text/javascript" src="./js/vendors/three.js"></script>
+	<script type="text/javascript" src="./js/vendors/OrbitControls.js"></script>
+	<script type="text/javascript" src="./js/vendors/GLTFLoader.js"></script>
+	<script type="text/javascript" src="./js/path_controller.js"></script>
+	<script type="text/javascript" src="./js/mouse_controller.js"></script>
+	<script type="text/javascript">
+
+		const storkPath = './resources/gltf/parrot.glb'
+		const treePath = './resources/gltf/tree.glb'
+
+		const loader = new THREE.GLTFLoader()
+		const clock = new THREE.Clock()
+		const camera = new THREE.PerspectiveCamera(
+			60,
+			innerWidth/innerHeight,
+			1,
+			500
+		)
+
+		const scene = new THREE.Scene()
+		scene.background = new THREE.Color().setHSL( 0.6, 0, 1 );
+		scene.fog = new THREE.Fog( scene.background, 10, 350 );
+
+		camera.position.set(0, 15, 50)
+
+		const renderer = new THREE.WebGLRenderer({antialias:true})
+		renderer.setSize(innerWidth, innerHeight)
+		document.body.appendChild(renderer.domElement)
+		renderer.outputEncoding = THREE.sRGBEncoding;
+				renderer.shadowMap.enabled = true;
+
+		const hemiLight = new THREE.HemisphereLight( 0xffcc00, 0xffffff, 0.6 );
+		hemiLight.color.setHSL( 0.6, 1, 0.6 );
+		hemiLight.groundColor.setHSL( 0.095, 1, 0.75 );
+		hemiLight.position.set( 0, 50, 0 );
+		scene.add( hemiLight );
+
+		const dirLight = new THREE.DirectionalLight( 0xffffff, 1 );
+		dirLight.color.setHSL( 0.1, 1, 0.95 );
+		dirLight.position.set( - .1, 1.75, 1 );
+		dirLight.position.multiplyScalar( 30 );
+		scene.add( dirLight );
+
+		dirLight.castShadow = true;
+
+		dirLight.shadow.mapSize.width = 2048;
+		dirLight.shadow.mapSize.height = 2048;
+
+		const d = 100;
+
+		dirLight.shadow.camera.left = - d;
+		dirLight.shadow.camera.right = d;
+		dirLight.shadow.camera.top = d;
+		dirLight.shadow.camera.bottom = - d;
+
+		dirLight.shadow.camera.far = 3500;
+		dirLight.shadow.bias = - 0.0001;
+
+  		const control = new THREE.OrbitControls(camera, renderer.domElement)
+  		control.maxDistance = 100
+  		const pathController = PathController(scene)
+  		const mouseController = MouseController()
+  		
+  		mouseController.init(camera, renderer, scene)
+
+  		let tree
+		let uid, model, animations, mixer
+
+		renderer.domElement.addEventListener = (evt) => {
+			pathController.play()
+			//pathController.pause()
+		}
+
+		const mouse3DHandler = (evt) => {
+			const detail = evt.detail
+			
+			if(detail.type == 'mousedown'){
+				pathController.pause()
+				control.enabled = false
+			}
+			else if(detail.type == 'mouseup'){
+				control.enabled = true
+				pathController.reload()
+			}
+
+			detail.object.position.copy(detail.point)
+		}
+
+		document.addEventListener('mouse3DEvent', mouse3DHandler)
+
+		document.querySelector('.hud .btn').addEventListener('click', e => {
+			if(!pathController.isPlaying){
+				document.querySelector('.hud .btn').innerText = 'stop'
+				pathController.play()
+				pathController.debug = false
+			}else{
+				document.querySelector('.hud .btn').innerText = 'start'
+				pathController.pause()
+				pathController.debug = true
+			}
+			
+		})
+
+		const trees = []
+
+		const spawnTrees = () => {
+			for(let i=0; i<15; i++){
+				const t = tree.clone()
+
+				t.castShadow = true
+				t.receiveShadow = true
+				const s = Math.random() * .05 + .04
+
+				t.scale.set(s, s, s)
+				t.position.y= -33
+				t.position.x = -40 + i*8
+				t.position.z = Math.random() * 60 - 30
+				t.rotateY(2. * Math.PI * Math.random())
+				scene.add(t)
+
+			}
+			
+		}
+
+
+		const loadModel = () => {
+			// GROUND
+
+			const groundGeo = new THREE.PlaneBufferGeometry( 10000, 10000 );
+			const groundMat = new THREE.MeshLambertMaterial( { color: 0xffffff } );
+			groundMat.color.setHSL( 0.095, 1, 0.75 );
+
+			const ground = new THREE.Mesh( groundGeo, groundMat );
+			ground.position.y = - 33;
+			ground.rotation.x = - Math.PI / 2;
+			ground.receiveShadow = true;
+			scene.add( ground );
+
+			// SKYDOME
+
+			const vertexShader = document.getElementById( 'vertexShader' ).textContent;
+			const fragmentShader = document.getElementById( 'fragmentShader' ).textContent;
+			const uniforms = {
+				"topColor": { value: new THREE.Color( 0x0077ff ) },
+				"bottomColor": { value: new THREE.Color( 0xffffff ) },
+				"offset": { value: 33 },
+				"exponent": { value: 0.6 }
+			}
+
+			uniforms[ "topColor" ].value.copy( hemiLight.color );
+
+			scene.fog.color.copy( uniforms[ "bottomColor" ].value );
+
+			const skyGeo = new THREE.SphereBufferGeometry( 400, 32, 15 );
+			const skyMat = new THREE.ShaderMaterial( {
+				uniforms: uniforms,
+				vertexShader: vertexShader,
+				fragmentShader: fragmentShader,
+				side: THREE.BackSide
+			} );
+
+			const sky = new THREE.Mesh( skyGeo, skyMat );
+			scene.add( sky );
+
+			
+
+			loader.load(treePath, gltf => {
+				const grp = gltf.scene
+				grp.traverse(child => {
+					
+					if(child.isMesh){
+						tree = child
+
+						spawnTrees()
+					}
+				})
+
+				
+			})
+
+			loader.load(storkPath, gltf => {
+				model = gltf.scene.children[0]
+				model.castShadow = true;
+				model.receiveShadow = true;
+				model.scale.set(4,4,4)
+				//model.rotateZ(-Math.PI/ 2)
+				
+				animations = gltf.animations
+
+				pathController.init(model, scene, [
+				new THREE.Vector3( -49.6435546875 , 0.6165056228637695 , 16.64784812927246 ),
+				new THREE.Vector3( -10.300847053527832 , 8.794692993164062 , 22.009214401245117 ),
+				new THREE.Vector3( 17.289867401123047 , 11.920282363891602 , 9.27254581451416 ),
+				new THREE.Vector3( 29.749309539794922 , 8.004924774169922 , -15.419958114624023 ),
+				new THREE.Vector3( 14.709699630737305 , 4.400015354156494 , -38.64426803588867 ),
+				new THREE.Vector3( -5.164644718170166 , 8.621381759643555 , -48.407867431640625 ),
+				new THREE.Vector3( -20.279685974121094 , 22.899337768554688 , -39.67211151123047 ),
+				new THREE.Vector3( -28.565040588378906 , 36.223045349121094 , -25.72216033935547 ),
+				new THREE.Vector3( -15.095879554748535 , 43.27153778076172 , -15.015270233154297 ),
+				new THREE.Vector3( 4.746000289916992 , 32.666175842285156 , -12.795391082763672 ),
+				new THREE.Vector3( 23.10938262939453 , 22.156972885131836 , -14.393880844116211 ),
+				new THREE.Vector3( 34.40583038330078 , 22.871171951293945 , 10.409327507019043 ),
+				new THREE.Vector3( 20.908782958984375 , 26.625896453857422 , 31.391353607177734 ),
+				new THREE.Vector3( -15.648752212524414 , 35.498111724853516 , 37.785247802734375 ),
+				new THREE.Vector3( -76.919921875 , 7.39532470703125 , 18.305194854736328 )
+			])
+
+				
+				mixer = new THREE.AnimationMixer( model );
+
+				const clip = animations[0]
+				const action = mixer.clipAction( clip );
+
+				action.timeScale = 2.
+				
+				action.play()
+
+				pathController.play()
+				update()
+			})
+		}
+
+		const update = () => {
+			uid = requestAnimationFrame(update)
+
+			const delta = clock.getDelta()
+			pathController.update(delta)
+			
+			control.target.copy(model.position)
+			control.update()
+
+			mouseController.update()
+
+			if(mixer)
+				mixer.update(delta)
+
+			renderer.render(scene, camera)
+		}
+
+		loadModel()
+		
+	</script>
+</body>
+</html>
